@@ -125,7 +125,7 @@ if __name__ == "__main__":
             # optimizer.zero_grad()
             # optimizer.step()
             writer.add_scalar("loss", loss.item(), iternum)
-            tb_writer.add_scalar("lr", scheduler.get_lr()[0], iternum)
+            writer.add_scalar("lr", scheduler.get_lr()[0], iternum)
 
             if np.mod(iternum, args.val_freq) == 0 and iternum > 0:
                 acc, scores_test, labels_test = evaluate_accuracy(
