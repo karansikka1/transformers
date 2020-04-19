@@ -45,9 +45,16 @@ def parse_arguments():
     parser.add_argument("--num_epochs", type=int, default=20)
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--lr", type=float, default=2e-5)
+    parser.add_argument("--weight_decay", type=float, default=0)
     parser.add_argument("--val_freq", type=int, default=100)
     parser.add_argument("--num_validation_samples", type=int, default=500)
     parser.add_argument("--gpu_ids", type=str, default="0")
+    parser.add_argument(
+        "--adam_epsilon", default=1e-8, type=float, help="Epsilon for Adam optimizer."
+    )
+    parser.add_argument(
+        "--warmup_steps", default=0, type=int, help="Linear warmup over warmup_steps."
+    )
     parser.add_argument(
         "--knowledge_method",
         type=int,

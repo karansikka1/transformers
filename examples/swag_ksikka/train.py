@@ -2,7 +2,7 @@ import os
 import numpy as np
 import torch
 from datasets import get_swag_data
-from transformers import BertTokenizer, AdamW
+from transformers import BertTokenizer, AdamW, get_linear_schedule_with_warmup
 from modeling_bert import BertForMultipleChoice
 import utils
 from tqdm import tqdm
@@ -50,7 +50,6 @@ if __name__ == "__main__":
     #     if "classifier" not in param[0]:
     #         param[1].requires_grad = False
     # Data and dataloaders
-    # TODO: Add Attention maps, positinal encoding, segment encoding
     dataset_train, dataset_val = get_swag_data(
         args.data_dir, text_encoder, args.num_validation_samples
     )
@@ -71,13 +70,36 @@ if __name__ == "__main__":
 
     # Optimizer
     # TODO: Should we use warmup etc. Shift to transformer optimizer that can handle all this
-    optimizer = AdamW(model.parameters(), lr=args.lr)
-    criterion = torch.nn.CrossEntropyLoss(reduction="sum")
+    # To keep effective batch-size 32 as per hugging_face examples
+    args.gradient_accumulation_steps = int(16 / args.batch_size)
+    no_decay = ["bias", "LayerNorm.weight"]
+    optimizer_grouped_parameters = [
+        {
+            "params": [
+                p
+                for n, p in model.named_parameters()
+                if not any(nd in n for nd in no_decay)
+            ],
+            "weight_decay": args.weight_decay,
+        },
+        {
+            "params": [
+                p
+                for n, p in model.named_parameters()
+                if any(nd in n for nd in no_decay)
+            ],
+            "weight_decay": 0.0,
+        },
+    ]
+    optimizer = AdamW(optimizer_grouped_parameters, lr=args.lr, eps=args.adam_epsilon)
+    t_total = len(train_loader) // args.gradient_accumulation_steps * args.num_epochs
+    scheduler = get_linear_schedule_with_warmup(
+        optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total
+    )
+    criterion = torch.nn.CrossEntropyLoss(reduction="mean")
     model.train()
 
     # Training
-    # To keep effective batch-size 32 as per hugging_face examples
-    args.gradient_accumulation_steps = int(16 / args.batch_size)
     iternum = 0
     best_perf = -1
     best_iter = 0
@@ -96,14 +118,16 @@ if __name__ == "__main__":
 
             if iternum % args.gradient_accumulation_steps == 0:
                 optimizer.step()
+                scheduler.step()  # Update learning rate schedule
                 #     scheduler.step()  # Update learning rate schedule
                 optimizer.zero_grad()
 
             # optimizer.zero_grad()
             # optimizer.step()
             writer.add_scalar("loss", loss.item(), iternum)
+            tb_writer.add_scalar("lr", scheduler.get_lr()[0], iternum)
 
-            if np.mod(iternum, args.val_freq) == 0:
+            if np.mod(iternum, args.val_freq) == 0 and iternum > 0:
                 acc, scores_test, labels_test = evaluate_accuracy(
                     model, val_loader, device
                 )
